@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foulée — analyse TCX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* Layout : bandeau d'import, tuiles de synthèse, carte + graphes empilés, tableaux */
+:root{
+  --bg:#f3f4f1; --panel:#ffffff; --fg:#1d2320; --muted:#68716c; --line:#dfe3df;
+  --accent:#e2531f; --accent2:#2f6f8f; --good:#3a8a4f;
+  --z1:#9fb8c8; --z2:#5fa37a; --z3:#e3b43c; --z4:#e2782f; --z5:#c8352b;
+  --display:"Barlow Condensed",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root{--bg:#141816;--panel:#1d2220;--fg:#e8ece9;--muted:#9aa49e;--line:#2e3532;--accent:#ff6a35;--accent2:#6fb2d4;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--body);padding:0 16px 48px}
+.wrap{max-width:1200px;margin:0 auto}
+header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding-block:20px}
+h1{font:700 2.2rem/1 var(--display);letter-spacing:.02em;margin:0;text-transform:uppercase}
+h1 span{color:var(--accent)}
+h2{font:700 1.25rem/1.2 var(--display);text-transform:uppercase;letter-spacing:.06em;margin:0 0 12px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,.btn{font:500 14px var(--body);border:1px solid var(--line);background:var(--panel);color:var(--fg);padding:9px 14px;border-radius:6px;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button:focus-visible,.btn:focus-within{outline:2px solid var(--accent2);outline-offset:2px}
+input[type=file]{display:none}
+label.inl{font-size:13px;color:var(--muted);display:flex;gap:6px;align-items:center}
+label.inl input{width:64px;font:14px var(--mono);padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg)}
+#drop{border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--muted);margin-bottom:16px}
+#drop.over{border-color:var(--accent);color:var(--accent)}
+.meta{color:var(--muted);margin:-4px 0 16px}
+.meta b{color:var(--fg);font:700 1.6rem var(--display);display:block;text-transform:none}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:20px}
+.tile{background:var(--panel);padding:12px 14px}
+.tile .v{font:700 1.9rem/1.1 var(--display);font-variant-numeric:tabular-nums}
+.tile .v small{font-size:.9rem;color:var(--muted);margin-left:3px}
+.tile .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:20px;min-width:0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media (max-width:860px){.grid2{grid-template-columns:1fr}}
+#map{height:420px;border-radius:8px}
+.maptools{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.maptools button.on{background:var(--fg);color:var(--bg)}
+.chartbox{position:relative;height:170px;margin-bottom:6px}
+.chartlabel{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:8px}
+.chartlabel b{color:var(--fg);font-family:var(--mono);text-transform:none;letter-spacing:0}
+.tbl{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:14px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:6px 8px;border-bottom:1px solid var(--line);font-family:var(--mono);white-space:nowrap}
+.bar{height:10px;background:var(--accent2);border-radius:2px;min-width:2px}
+tr.fast td:nth-child(2){color:var(--good);font-weight:600}
+.zones .row{display:grid;grid-template-columns:120px 1fr 90px;gap:10px;align-items:center;margin-bottom:6px;font-size:13px}
+.zones .row .b{height:18px;border-radius:3px}
+.zones .row span:last-child{font-family:var(--mono);text-align:right}
+.note{font-size:12px;color:var(--muted)}
+.empty{color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Foul<span>é</span>e</h1>
+  <div class="actions">
+    <label class="inl" for="fcmax">FC max <input id="fcmax" type="number" min="120" max="230"></label>
+    <label class="inl" for="weight">Poids kg <input id="weight" type="number" value="70" min="30" max="200"></label>
+    <label class="btn primary" for="file">Importer un .tcx</label>
+    <input id="file" type="file" accept=".tcx,application/xml">
+    <button id="sample">Exemple</button>
+  </div>
+</header>
+<div id="drop">Glissez-déposez un fichier .tcx ici (traité localement, rien n'est envoyé)</div>
+
+<div class="meta" id="meta"></div>
+<div class="tiles" id="tiles"></div>
+
+<div class="grid2">
+  <div class="card">
+    <h2>Carte</h2>
+    <div class="maptools" id="maptools">
+      <button data-m="plain" class="on">Tracé</button>
+      <button data-m="pace">Allure</button>
+      <button data-m="hr">Fréquence cardiaque</button>
+      <button data-m="grade">Pente</button>
+    </div>
+    <div id="map"></div>
+  </div>
+  <div class="card">
+    <h2>Analyse</h2>
+    <div id="charts"></div>
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="card"><h2>Temps intermédiaires (km)</h2><div class="tbl" id="splits"></div></div>
+  <div class="card"><h2>Meilleurs efforts</h2><div class="tbl" id="best"></div>
+    <h2 style="margin-top:20px">Tours (appareil)</h2><div class="tbl" id="laps"></div></div>
+</div>
+
+<div class="grid2">
+  <div class="card zones"><h2>Zones de fréquence cardiaque</h2><div id="hrzones"></div></div>
+  <div class="card zones"><h2>Zones d'allure</h2><div id="pacezones"></div></div>
+</div>
+<div class="card"><h2>Distribution des allures</h2><div class="chartbox" style="height:220px"><canvas id="hist"></canvas></div></div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let ACT=null, map, layers=[], marker, charts=[], mapMode='plain';
+
+/* ---------- formatage ---------- */
+const fmtT=s=>{s=Math.round(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return (h?h+':'+String(m).padStart(2,'0'):m)+':'+String(x).padStart(2,'0')};
+const fmtPace=v=>(!v||v<0.3)?'–':fmtT(1000/v); // v en m/s -> min/km
+const R=6371000, rad=d=>d*Math.PI/180;
+const hav=(a,b)=>{const dLa=rad(b.lat-a.lat),dLo=rad(b.lon-a.lon);const h=Math.sin(dLa/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(h))};
+
+/* ---------- parsing TCX ---------- */
+function parseTCX(text){
+  const doc=new DOMParser().parseFromString(text,'application/xml');
+  if(doc.getElementsByTagName('parsererror').length) throw new Error('Fichier XML invalide');
+  const q=(el,n)=>el.getElementsByTagNameNS('*',n)[0];
+  const num=(el,n)=>{const e=q(el,n);return e?parseFloat(e.textContent):null};
+  const act=q(doc,'Activity');
+  const sport=act?.getAttribute('Sport')||'Running';
+  const laps=[...doc.getElementsByTagNameNS('*','Lap')].map(l=>({start:new Date(l.getAttribute('StartTime')),time:num(l,'TotalTimeSeconds'),dist:num(l,'DistanceMeters'),cal:num(l,'Calories')}));
+  const pts=[];
+  for(const tp of doc.getElementsByTagNameNS('*','Trackpoint')){
+    const t=q(tp,'Time'); if(!t) continue;
+    const hrEl=q(tp,'HeartRateBpm');
+    pts.push({t:new Date(t.textContent).getTime()/1000,lat:num(tp,'LatitudeDegrees'),lon:num(tp,'LongitudeDegrees'),
+      alt:num(tp,'AltitudeMeters'),d:num(tp,'DistanceMeters'),hr:hrEl?num(hrEl,'Value'):null,
+      cad:num(tp,'RunCadence')??num(tp,'Cadence'),pow:num(tp,'Watts'),spd:num(tp,'Speed')});
+  }
+  if(pts.length<2) throw new Error('Aucun point de trace trouvé');
+  const name=q(doc,'Name')?.textContent||q(doc,'Notes')?.textContent||'';
+  return {sport,laps,pts,name,cal:laps.reduce((a,l)=>a+(l.cal||0),0)};
+}
+
+/* ---------- calculs ---------- */
+function analyse(raw){
+  let p=raw.pts.sort((a,b)=>a.t-b.t);
+  // remplir positions/distances manquantes
+  let lastPos=null, cum=0;
+  const hasD=p.filter(x=>x.d!=null).length>p.length*0.5;
+  p.forEach((x,i)=>{
+    if(x.lat!=null){ if(lastPos) cum+=hav(lastPos,x); lastPos=x; }
+    if(!hasD||x.d==null) x.d=hasD&&i?p[i-1].d:cum;
+  });
+  for(let i=1;i<p.length;i++) if(p[i].d<p[i-1].d) p[i].d=p[i-1].d;
+  const t0=p[0].t; p.forEach(x=>x.s=x.t-t0);
+  // altitude lissée
+  const altRaw=p.map(x=>x.alt);
+  const hasAlt=altRaw.some(a=>a!=null);
+  if(hasAlt){let la=altRaw.find(a=>a!=null);p.forEach(x=>{if(x.alt==null)x.alt=la;la=x.alt});}
+  p.forEach((x,i)=>{ if(!hasAlt){x.altS=null;return}
+    let s=0,n=0;for(let j=Math.max(0,i-5);j<=Math.min(p.length-1,i+5);j++){s+=p[j].alt;n++}x.altS=s/n;});
+  // vitesse lissée sur fenêtre ~10 s
+  let j=0;
+  p.forEach((x,i)=>{ while(p[j].s<x.s-10&&j<i) j++; let k=i; while(k<p.length-1&&p[k+1].s<=x.s+5) k++;
+    const lo=Math.min(j,i), dt=p[k].s-p[lo].s; x.v=dt>0?(p[k].d-p[lo].d)/dt:0; });
+  // pente sur ~30 m
+  let a=0;
+  p.forEach((x,i)=>{ if(!hasAlt){x.g=0;return} while(a<i&&x.d-p[a].d>30) a++; let b=i; while(b<p.length-1&&p[b+1].d-x.d<=15) b++;
+    const dd=p[b].d-p[a].d; x.g=dd>10?Math.max(-0.45,Math.min(0.45,(p[b].altS-p[a].altS)/dd)):0; });
+  // cadence en pas/min
+  const cads=p.map(x=>x.cad).filter(c=>c>0);
+  const cadMul=cads.length&&cads.reduce((s,c)=>s+c,0)/cads.length<120?2:1;
+  p.forEach(x=>{if(x.cad!=null)x.cad*=cadMul});
+  // agrégats
+  let moving=0, gain=0, loss=0, gapW=0, hrSum=0, hrT=0, cadSum=0, cadT=0, powSum=0, powT=0;
+  let refAlt=hasAlt?p[0].altS:0;
+  const minetti=g=>155.4*g**5-30.4*g**4-43.3*g**3+46.3*g**2+19.5*g+3.6;
+  for(let i=1;i<p.length;i++){
+    const dt=p[i].s-p[i-1].s, dd=p[i].d-p[i-1].d;
+    const isMov=dt>0&&dt<30&&dd/dt>0.6;
+    p[i].mov=isMov;
+    if(isMov){ moving+=dt; gapW+=dd*minetti(p[i].g)/3.6;
+      if(p[i].hr){hrSum+=p[i].hr*dt;hrT+=dt}
+      if(p[i].cad){cadSum+=p[i].cad*dt;cadT+=dt}
+      if(p[i].pow){powSum+=p[i].pow*dt;powT+=dt} }
+    if(hasAlt){const diff=p[i].altS-refAlt; if(diff>2){gain+=diff;refAlt=p[i].altS} else if(diff<-2){loss-=diff;refAlt=p[i].altS}}
+  }
+  const dist=p[p.length-1].d, elapsed=p[p.length-1].s;
+  const hrs=p.map(x=>x.hr).filter(Boolean), alts=p.map(x=>x.altS).filter(v=>v!=null);
+  const fcmaxObs=hrs.length?Math.max(...hrs):null;
+  // splits km
+  const splits=[]; let si=0;
+  for(let km=1000;;km+=1000){
+    const last=km>dist; const target=last?dist:km;
+    let i=si; while(i<p.length-1&&p[i].d<target) i++;
+    const seg=p.slice(si,i+1); if(seg.length<2) break;
+    const dd=seg[seg.length-1].d-seg[0].d; if(dd<50&&last) break;
+    let mt=0,hs=0,ht=0,gw=0;
+    for(let k=1;k<seg.length;k++){const dt=seg[k].s-seg[k-1].s;if(seg[k].mov){mt+=dt;gw+=(seg[k].d-seg[k-1].d)*minetti(seg[k].g)/3.6}if(seg[k].hr){hs+=seg[k].hr*dt;ht+=dt}}
+    splits.push({n:splits.length+1,dist:dd,time:mt||seg[seg.length-1].s-seg[0].s,elev:hasAlt?seg[seg.length-1].altS-seg[0].altS:null,hr:ht?hs/ht:null,gap:mt?gw/mt:null});
+    si=i; if(last) break;
+  }
+  // meilleurs efforts
+  const targets=[[400,'400 m'],[805,'½ mile'],[1000,'1 km'],[1609,'1 mile'],[3219,'2 miles'],[5000,'5 km'],[10000,'10 km'],[15000,'15 km'],[21097,'Semi-marathon'],[42195,'Marathon']];
+  const best=targets.filter(([m])=>m<=dist).map(([m,l])=>{
+    let b=Infinity,lo=0,at=0;
+    for(let hi=0;hi<p.length;hi++){ while(lo<hi&&p[hi].d-p[lo+1].d>=m) lo++;
+      if(p[hi].d-p[lo].d>=m){const over=p[hi].d-p[lo].d; const t=(p[hi].s-p[lo].s)*m/over; if(t<b){b=t;at=p[lo].d}} }
+    return {l,m,t:b,at};
+  });
+  return {raw,p,dist,elapsed,moving,gain,loss,hasAlt,
+    avgV:moving?dist/moving:0,gapV:moving?gapW/moving:0,
+    hrAvg:hrT?hrSum/hrT:null,hrMax:fcmaxObs,cadAvg:cadT?cadSum/cadT:null,powAvg:powT?powSum/powT:null,
+    altMin:alts.length?Math.min(...alts):null,altMax:alts.length?Math.max(...alts):null,
+    maxV:Math.max(...p.map(x=>x.v)),splits,best};
+}
+
+/* ---------- zones ---------- */
+const HRZ=[['Z1 Endurance',0,.6],['Z2 Modéré',.6,.7],['Z3 Tempo',.7,.8],['Z4 Seuil',.8,.9],['Z5 Anaérobie',.9,9]];
+function hrZoneTimes(A,fcmax){const z=[0,0,0,0,0];const p=A.p;for(let i=1;i<p.length;i++){const dt=p[i].s-p[i-1].s;if(!p[i].hr||dt>30)continue;const r=p[i].hr/fcmax;const k=HRZ.findIndex(([,lo,hi])=>r>=lo&&r<hi);if(k>=0)z[k]+=dt}return z}
+function paceZones(A){ // relatives à l'allure seuil estimée = meilleur effort ≥5 km ou 92% vitesse moy
+  const b=A.best.find(b=>b.m===10000)||A.best.find(b=>b.m===5000);
+  const thr=b?b.m/b.t*(b.m===5000?0.95:0.98):A.avgV*1.08;
+  const Z=[['Récup',0,.78],['Endurance',.78,.88],['Tempo',.88,.95],['Seuil',.95,1.02],['VO2max',1.02,1.12],['Anaérobie',1.12,9]];
+  const t=Z.map(()=>0);const p=A.p;
+  for(let i=1;i<p.length;i++){if(!p[i].mov)continue;const r=p[i].v/thr;const k=Z.findIndex(([,lo,hi])=>r>=lo&&r<hi);if(k>=0)t[k]+=p[i].s-p[i-1].s}
+  return {Z,t,thr};
+}
+
+/* ---------- rendu ---------- */
+function tile(k,v,u=''){return `<div class="tile"><div class="v">${v}${u?`<small>${u}</small>`:''}</div><div class="k">${k}</div></div>`}
+function render(A){
+  ACT=A;
+  const fcIn=$('#fcmax'); if(!fcIn.value) fcIn.value=Math.max(185,A.hrMax||0);
+  const fcmax=+fcIn.value, wt=+$('#weight').value||70;
+  const start=new Date(A.p[0].t*1000);
+  $('#meta').innerHTML=`<b>${A.raw.name||'Course à pied'}</b>${start.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})} à ${start.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})} · ${A.raw.sport}`;
+  const hz=hrZoneTimes(A,fcmax);
+  const effort=A.hrAvg?Math.round(hz.reduce((s,t,i)=>s+t/60*[0.5,1,2,3.5,5.5][i],0)):null; // effort relatif type TRIMP
+  const cal=A.raw.cal||Math.round(A.dist/1000*wt*1.036);
+  const pz=paceZones(A);
+  $('#tiles').innerHTML=[
+    tile('Distance',(A.dist/1000).toFixed(2),'km'),
+    tile('Temps de déplacement',fmtT(A.moving)),
+    tile('Temps écoulé',fmtT(A.elapsed)),
+    tile('Allure moyenne',fmtPace(A.avgV),'/km'),
+    tile('Allure ajustée (GAP)',fmtPace(A.gapV),'/km'),
+    tile('Allure max',fmtPace(A.maxV),'/km'),
+    tile('Dénivelé +',A.hasAlt?Math.round(A.gain):'–','m'),
+    tile('Dénivelé −',A.hasAlt?Math.round(A.loss):'–','m'),
+    tile('Altitude min / max',A.hasAlt?Math.round(A.altMin)+' / '+Math.round(A.altMax):'–','m'),
+    tile('FC moyenne',A.hrAvg?Math.round(A.hrAvg):'–','bpm'),
+    tile('FC max',A.hrMax||'–','bpm'),
+    tile('Cadence moyenne',A.cadAvg?Math.round(A.cadAvg):'–','ppm'),
+    tile('Puissance moyenne',A.powAvg?Math.round(A.powAvg):'–','W'),
+    tile('Calories',cal,'kcal'),
+    tile('Effort relatif',effort??'–'),
+    tile('Vitesse moyenne',(A.avgV*3.6).toFixed(1),'km/h'),
+  ].join('');
+  drawMap(A); drawCharts(A); drawSplits(A); drawBest(A); drawLaps(A);
+  drawZones('#hrzones',HRZ.map((z,i)=>[`${z[0]} <span class="note">${Math.round(z[1]*fcmax)}${z[2]<2?'–'+Math.round(z[2]*fcmax):'+'}</span>`,hz[i]]),['--z1','--z2','--z3','--z4','--z5'],A.hrAvg?'':'Pas de données cardiaques dans ce fichier.');
+  drawZones('#pacezones',pz.Z.map((z,i)=>[`${z[0]} <span class="note">${z[1]?fmtPace(pz.thr*z[1]):'+'}${z[2]<2?' → '+fmtPace(pz.thr*z[2]):' et plus vite'}</span>`,pz.t[i]]),['--z1','--z2','--z3','--z4','--z5','--accent'],'',`Allure seuil estimée : ${fmtPace(pz.thr)}/km`);
+  drawHist(A);
+}
+function drawZones(sel,rows,cols,empty,foot=''){
+  const tot=rows.reduce((s,r)=>s+r[1],0);
+  if(!tot){$(sel).innerHTML=`<p class="empty">${empty||'Pas de données.'}</p>`;return}
+  $(sel).innerHTML=rows.map((r,i)=>`<div class="row"><span>${r[0]}</span><div><div class="b" style="width:${(r[1]/tot*100).toFixed(1)}%;background:var(${cols[i]})"></div></div><span>${fmtT(r[1])} · ${Math.round(r[1]/tot*100)}%</span></div>`).join('')+(foot?`<p class="note">${foot}</p>`:'');
+}
+function colorScale(t){ // 0 bleu -> 1 rouge
+  const stops=[[47,111,143],[95,163,122],[227,180,60],[226,120,47],[200,53,43]];
+  t=Math.max(0,Math.min(.999,t))*(stops.length-1);const i=Math.floor(t),f=t-i;const a=stops[i],b=stops[i+1];
+  return `rgb(${a.map((v,k)=>Math.round(v+(b[k]-v)*f)).join(',')})`;
+}
+function drawMap(A){
+  const ll=A.p.filter(x=>x.lat!=null);
+  if(!map){map=L.map('map');L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map)}
+  layers.forEach(l=>map.removeLayer(l));layers=[];
+  if(!ll.length){map.setView([46.6,2.4],5);return}
+  const key={pace:x=>x.v,hr:x=>x.hr,grade:x=>x.g}[mapMode];
+  if(!key){layers.push(L.polyline(ll.map(x=>[x.lat,x.lon]),{color:css('--accent'),weight:4}).addTo(map))}
+  else{
+    const vals=ll.map(key).filter(v=>v!=null&&v>(mapMode==='grade'?-1:0)).sort((a,b)=>a-b);
+    const lo=vals[Math.floor(vals.length*.05)],hi=vals[Math.floor(vals.length*.95)];
+    for(let i=1;i<ll.length;i++){const v=key(ll[i]);if(v==null)continue;
+      layers.push(L.polyline([[ll[i-1].lat,ll[i-1].lon],[ll[i].lat,ll[i].lon]],{color:colorScale((v-lo)/(hi-lo||1)),weight:5}).addTo(map))}
+  }
+  layers.push(L.circleMarker([ll[0].lat,ll[0].lon],{radius:7,color:'#fff',fillColor:'#3a8a4f',fillOpacity:1,weight:2}).addTo(map));
+  const e=ll[ll.length-1];layers.push(L.circleMarker([e.lat,e.lon],{radius:7,color:'#fff',fillColor:'#c8352b',fillOpacity:1,weight:2}).addTo(map));
+  // bornes km
+  A.splits.forEach((s,i)=>{const pt=ll.find(x=>x.d>=(i+1)*1000);if(pt&&i<A.splits.length-1)layers.push(L.marker([pt.lat,pt.lon],{icon:L.divIcon({className:'',html:`<div style="background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:9px;font:600 11px var(--mono);padding:0 5px">${i+1}</div>`})}).addTo(map))});
+  map.fitBounds(L.latLngBounds(ll.map(x=>[x.lat,x.lon])),{padding:[20,20]});
+  if(marker)map.removeLayer(marker);marker=L.circleMarker([0,0],{radius:6,color:'#fff',fillColor:css('--accent2'),fillOpacity:1,weight:2});
+}
+function sample(A,n=900){const step=Math.max(1,Math.floor(A.p.length/n));return A.p.filter((_,i)=>i%step===0)}
+function drawCharts(A){
+  charts.forEach(c=>c.destroy());charts=[];
+  const S=sample(A);const xs=S.map(x=>x.d/1000);
+  const defs=[
+    ['Allure','pace',S.map(x=>x.v>0.8?1000/x.v/60:null),css('--accent2'),fmtPace(A.avgV)+'/km',true],
+    ['Altitude','alt',A.hasAlt?S.map(x=>x.altS):null,'#8a8f7a',A.hasAlt?`+${Math.round(A.gain)} m`:''],
+    ['Fréquence cardiaque','hr',A.hrAvg?S.map(x=>x.hr):null,'#c8352b',A.hrAvg?Math.round(A.hrAvg)+' bpm moy.':''],
+    ['Cadence','cad',A.cadAvg?S.map(x=>x.cad):null,'#7a5fa3',A.cadAvg?Math.round(A.cadAvg)+' ppm moy.':''],
+    ['Puissance','pow',A.powAvg?S.map(x=>x.pow):null,'#e3b43c',A.powAvg?Math.round(A.powAvg)+' W moy.':''],
+    ['Pente','grade',A.hasAlt?S.map(x=>x.g*100):null,'#5fa37a','%'],
+  ].filter(d=>d[2]);
+  $('#charts').innerHTML=defs.map((d,i)=>`<div class="chartlabel"><span>${d[0]}</span><b id="cv${i}">${d[4]}</b></div><div class="chartbox"><canvas id="c${i}"></canvas></div>`).join('');
+  const grid=css('--line'),mut=css('--muted');
+  defs.forEach((d,i)=>{
+    const c=new Chart($('#c'+i),{type:'line',data:{labels:xs,datasets:[{data:d[2],borderColor:d[3],backgroundColor:d[3]+'33',fill:d[1]==='alt'?'start':(d[1]==='pace'?'end':'origin'),pointRadius:0,borderWidth:1.5,tension:.2,spanGaps:true}]},
+      options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},
+        plugins:{legend:{display:false},tooltip:{enabled:false}},
+        scales:{x:{type:'linear',min:0,max:A.dist/1000,ticks:{color:mut,callback:v=>+v.toFixed(1)+' km',maxTicksLimit:8},grid:{color:grid}},
+          y:{reverse:!!d[5],ticks:{color:mut,maxTicksLimit:5,callback:v=>d[1]==='pace'?fmtT(v*60):Math.round(v)},grid:{color:grid}}},
+        onHover:(e,els)=>{ if(!els.length)return; syncHover(els[0].index,S,defs); }}});
+    if(d[1]==='pace'){const vs=d[2].filter(Boolean).sort((a,b)=>a-b);c.options.scales.y.min=vs[0];c.options.scales.y.max=Math.min(vs[Math.floor(vs.length*.98)]*1.05,vs[0]*2.2);c.update()}
+    charts.push(c);
+  });
+  const fmt={pace:v=>v?fmtT(v*60)+'/km':'–',alt:v=>Math.round(v)+' m',hr:v=>v?Math.round(v)+' bpm':'–',cad:v=>v?Math.round(v)+' ppm':'–',pow:v=>v?Math.round(v)+' W':'–',grade:v=>v.toFixed(1)+' %'};
+  window.syncHover=(idx,S,defs)=>{
+    const x=S[idx];
+    charts.forEach(c=>{c.setActiveElements([{datasetIndex:0,index:idx}]);c.tooltip.setActiveElements([{datasetIndex:0,index:idx}],{x:0,y:0});c.draw()});
+    defs.forEach((d,i)=>$('#cv'+i).textContent=`${(x.d/1000).toFixed(2)} km · ${fmtT(x.s)} · ${fmt[d[1]](d[2][idx])}`);
+    if(x.lat!=null){marker.setLatLng([x.lat,x.lon]);if(!map.hasLayer(marker))marker.addTo(map)}
+  };
+  // crosshair vertical
+  if(!Chart.registry.plugins.get('xhair'))Chart.register({id:'xhair',afterDraw(c){const a=c.getActiveElements();if(!a.length)return;const x=a[0].element.x,ctx=c.ctx;ctx.save();ctx.strokeStyle=mut;ctx.beginPath();ctx.moveTo(x,c.chartArea.top);ctx.lineTo(x,c.chartArea.bottom);ctx.stroke();ctx.restore()}});
+}
+function drawSplits(A){
+  const vs=A.splits.map(s=>s.dist/s.time),mx=Math.max(...vs),mn=Math.min(...vs);
+  const fastest=vs.indexOf(mx);
+  $('#splits').innerHTML=`<table><tr><th>Km</th><th>Allure</th><th style="width:30%"></th><th>GAP</th><th>Dén.</th><th>FC</th></tr>${A.splits.map((s,i)=>`<tr class="${i===fastest?'fast':''}"><td>${s.dist<990?(s.dist/1000).toFixed(2):s.n}</td><td>${fmtPace(vs[i])}</td><td><div class="bar" style="width:${(20+80*(vs[i]-mn*0.95)/(mx-mn*0.95||1)).toFixed(0)}%"></div></td><td>${fmtPace(s.gap)}</td><td>${s.elev==null?'–':(s.elev>0?'+':'')+Math.round(s.elev)+' m'}</td><td>${s.hr?Math.round(s.hr):'–'}</td></tr>`).join('')}</table>`;
+}
+function drawBest(A){
+  $('#best').innerHTML=A.best.length?`<table><tr><th>Distance</th><th>Temps</th><th>Allure</th><th>À partir de</th></tr>${A.best.map(b=>`<tr><td>${b.l}</td><td>${fmtT(b.t)}</td><td>${fmtPace(b.m/b.t)}/km</td><td>${(b.at/1000).toFixed(2)} km</td></tr>`).join('')}</table>`:'<p class="empty">Sortie trop courte.</p>';
+}
+function drawLaps(A){
+  const L_=A.raw.laps.filter(l=>l.time);
+  $('#laps').innerHTML=L_.length>1?`<table><tr><th>Tour</th><th>Distance</th><th>Temps</th><th>Allure</th></tr>${L_.map((l,i)=>`<tr><td>${i+1}</td><td>${(l.dist/1000).toFixed(2)} km</td><td>${fmtT(l.time)}</td><td>${fmtPace(l.dist/l.time)}/km</td></tr>`).join('')}</table>`:'<p class="empty">Un seul tour enregistré.</p>';
+}
+let histC;
+function drawHist(A){
+  histC&&histC.destroy();
+  const bins={};A.p.forEach((x,i)=>{if(!i||!x.mov)return;const pace=1000/x.v;if(pace>720||pace<150)return;const b=Math.floor(pace/15)*15;bins[b]=(bins[b]||0)+x.s-A.p[i-1].s});
+  const keys=Object.keys(bins).map(Number).sort((a,b)=>a-b);
+  histC=new Chart($('#hist'),{type:'bar',data:{labels:keys.map(k=>fmtT(k)),datasets:[{data:keys.map(k=>bins[k]/60),backgroundColor:css('--accent')}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmtT(c.raw*60)+' passées à cette allure'}}},
+      scales:{x:{ticks:{color:css('--muted')},grid:{display:false},title:{display:true,text:'Allure (min/km)',color:css('--muted')}},y:{ticks:{color:css('--muted'),callback:v=>v+' min'},grid:{color:css('--line')}}}}});
+}
+
+/* ---------- chargement ---------- */
+function load(text){try{render(analyse(parseTCX(text)))}catch(e){$('#meta').innerHTML=`<b>Import impossible</b>${e.message}. Vérifiez qu'il s'agit bien d'un export .tcx (Garmin, Coros, Polar, Suunto…).`}}
+$('#file').onchange=e=>{const f=e.target.files[0];if(f){$('#fcmax').value='';f.text().then(load)}};
+const drop=$('#drop');
+['dragover','dragenter'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over')}));
+['dragleave','drop'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over')}));
+document.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f){$('#fcmax').value='';f.text().then(load)}});
+$('#maptools').onclick=e=>{const m=e.target.dataset.m;if(!m||!ACT)return;mapMode=m;[...$('#maptools').children].forEach(b=>b.classList.toggle('on',b===e.target));drawMap(ACT)};
+['#fcmax','#weight'].forEach(s=>$(s).onchange=()=>ACT&&render(ACT));
+
+/* ---------- exemple synthétique : boucle de 10 km autour du bois de Vincennes ---------- */
+function makeSample(){
+  const c=[48.8335,2.4330],pts=[];let t=Date.parse('2026-10-04T08:12:00Z')/1000,d=0,prev=null;
+  for(let i=0;i<=3300;i++){
+    const a=i/3300*2*Math.PI*1.6, r=0.012+0.003*Math.sin(a*3);
+    const lat=c[0]+r*Math.sin(a)*0.75, lon=c[1]+r*1.4*Math.cos(a);
+    const alt=48+9*Math.sin(a*2)+3*Math.sin(a*7);
+    const p={lat,lon};if(prev)d+=hav(prev,p);prev=p;
+    const hr=Math.round(138+18*Math.min(1,i/600)+6*Math.sin(a*2)+(i>3000?12:0));
+    pts.push(`<Trackpoint><Time>${new Date(t*1000).toISOString()}</Time><Position><LatitudeDegrees>${lat.toFixed(6)}</LatitudeDegrees><LongitudeDegrees>${lon.toFixed(6)}</LongitudeDegrees></Position><AltitudeMeters>${alt.toFixed(1)}</AltitudeMeters><DistanceMeters>${d.toFixed(1)}</DistanceMeters><HeartRateBpm><Value>${hr}</Value></HeartRateBpm><Extensions><TPX xmlns="http://www.garmin.com/xmlschemas/ActivityExtension/v2"><RunCadence>${Math.round(84+3*Math.sin(i/40))}</RunCadence></TPX></Extensions></Trackpoint>`);
+    t+=1.0+0.25*Math.sin(a*2)-(i>3000?0.25:0);
+  }
+  return `<?xml version="1.0"?><TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"><Activities><Activity Sport="Running"><Id>x</Id><Lap StartTime="2026-10-04T08:12:00Z"><TotalTimeSeconds>0</TotalTimeSeconds><Track>${pts.join('')}</Track></Lap><Notes>Exemple — sortie au bois de Vincennes</Notes></Activity></Activities></TrainingCenterDatabase>`;
+}
+$('#sample').onclick=()=>{$('#fcmax').value='';load(makeSample())};
+load(makeSample());
+</script>
+</body>
+</html>
